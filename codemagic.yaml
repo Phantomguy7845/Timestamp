@@ -1,0 +1,76 @@
+workflows:
+  android-build:
+    name: Android Build
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    
+    environment:
+      groups:
+        - keystore_credentials
+      node: 18
+      java: 17
+      vars:
+        PACKAGE_NAME: "com.example.timestamp"
+    
+    triggering:
+      events:
+        - push
+        - pull_request
+      branch_patterns:
+        - pattern: 'main'
+          include: true
+        - pattern: 'develop'
+          include: true
+    
+    scripts:
+      - name: Install Node dependencies
+        script: |
+          npm ci
+
+      - name: Build web app
+        script: |
+          npm run build
+
+      - name: Add Android platform
+        script: |
+          npx cap add android || true
+
+      - name: Sync Capacitor
+        script: |
+          npx cap sync android
+
+      - name: Set Android SDK
+        script: |
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
+
+      - name: Build Debug APK
+        script: |
+          cd android
+          chmod +x ./gradlew
+          ./gradlew assembleDebug
+
+      - name: Build Release APK (if keystore exists)
+        script: |
+          cd android
+          if [ -n "$CM_KEYSTORE" ]; then
+            echo $CM_KEYSTORE | base64 --decode > keystore.jks
+            ./gradlew assembleRelease \
+              -Pandroid.injected.signing.store.file=$(pwd)/keystore.jks \
+              -Pandroid.injected.signing.store.password=$CM_KEYSTORE_PASSWORD \
+              -Pandroid.injected.signing.key.alias=$CM_KEY_ALIAS \
+              -Pandroid.injected.signing.key.password=$CM_KEY_PASSWORD
+            echo "Release APK signed successfully"
+          else
+            echo "No keystore configured, skipping release signing"
+          fi
+    
+    artifacts:
+      - android/app/build/outputs/apk/**/*.apk
+    
+    publishing:
+      email:
+        recipients:
+          - build@example.com
+        notify:
+          success: true
+          failure: true
