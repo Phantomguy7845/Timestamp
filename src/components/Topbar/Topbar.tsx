@@ -1,4 +1,3 @@
-import { useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useCamera } from '../../hooks/useCamera';
 import { Camera } from '@capacitor/camera';
