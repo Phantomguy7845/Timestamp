@@ -1,13 +1,21 @@
 package com.example.timestamp;
 
 import android.Manifest;
+import android.app.Activity;
+import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.webkit.PermissionRequest;
+import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
 import android.webkit.GeolocationPermissions;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
@@ -20,16 +28,50 @@ import java.util.List;
 public class MainActivity extends BridgeActivity {
     
     private static final int PERMISSION_REQUEST_CODE = 100;
+    private ValueCallback<Uri[]> filePathCallback;
+    private ActivityResultLauncher<Intent> fileChooserLauncher;
     
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         
+        // Setup file chooser launcher
+        setupFileChooserLauncher();
+        
         // Request permissions on startup
         requestRequiredPermissions();
-        
-        // Configure WebView for camera and location
+    }
+    
+    @Override
+    public void onStart() {
+        super.onStart();
+        // Configure WebView after bridge is ready
         configureWebView();
+    }
+    
+    private void setupFileChooserLauncher() {
+        fileChooserLauncher = registerForActivityResult(
+            new ActivityResultContracts.StartActivityForResult(),
+            result -> {
+                if (filePathCallback != null) {
+                    Uri[] results = null;
+                    if (result.getResultCode() == Activity.RESULT_OK && result.getData() != null) {
+                        // Handle multiple selection
+                        if (result.getData().getClipData() != null) {
+                            int count = result.getData().getClipData().getItemCount();
+                            results = new Uri[count];
+                            for (int i = 0; i < count; i++) {
+                                results[i] = result.getData().getClipData().getItemAt(i).getUri();
+                            }
+                        } else if (result.getData().getData() != null) {
+                            results = new Uri[]{result.getData().getData()};
+                        }
+                    }
+                    filePathCallback.onReceiveValue(results);
+                    filePathCallback = null;
+                }
+            }
+        );
     }
     
     private void requestRequiredPermissions() {
@@ -77,27 +119,95 @@ public class MainActivity extends BridgeActivity {
     }
     
     private void configureWebView() {
-        // Get the WebView from Capacitor bridge and configure it
-        if (getBridge() != null && getBridge().getWebView() != null) {
-            getBridge().getWebView().setWebChromeClient(new WebChromeClient() {
-                
-                // Handle WebRTC/getUserMedia permission requests
-                @Override
-                public void onPermissionRequest(final PermissionRequest request) {
-                    runOnUiThread(() -> {
-                        // Auto-grant camera and audio permissions to WebView
+        if (getBridge() == null || getBridge().getWebView() == null) {
+            return;
+        }
+        
+        WebView webView = getBridge().getWebView();
+        WebSettings settings = webView.getSettings();
+        
+        // Enable JavaScript
+        settings.setJavaScriptEnabled(true);
+        
+        // Enable DOM storage
+        settings.setDomStorageEnabled(true);
+        
+        // Enable database
+        settings.setDatabaseEnabled(true);
+        
+        // Enable geolocation
+        settings.setGeolocationEnabled(true);
+        
+        // Allow file access
+        settings.setAllowFileAccess(true);
+        settings.setAllowContentAccess(true);
+        
+        // Enable media playback
+        settings.setMediaPlaybackRequiresUserGesture(false);
+        
+        // Mixed content mode
+        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        
+        // Set WebChromeClient for permissions and file chooser
+        webView.setWebChromeClient(new WebChromeClient() {
+            
+            // Handle WebRTC/getUserMedia permission requests (Camera)
+            @Override
+            public void onPermissionRequest(final PermissionRequest request) {
+                runOnUiThread(() -> {
+                    // Check if camera permission is granted at Android level
+                    if (ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.CAMERA) 
+                            == PackageManager.PERMISSION_GRANTED) {
                         request.grant(request.getResources());
-                    });
-                }
-                
-                // Handle geolocation permission requests
-                @Override
-                public void onGeolocationPermissionsShowPrompt(String origin, 
-                        GeolocationPermissions.Callback callback) {
+                    } else {
+                        // Request permission again
+                        ActivityCompat.requestPermissions(MainActivity.this,
+                                new String[]{Manifest.permission.CAMERA},
+                                PERMISSION_REQUEST_CODE);
+                        request.grant(request.getResources());
+                    }
+                });
+            }
+            
+            // Handle geolocation permission requests
+            @Override
+            public void onGeolocationPermissionsShowPrompt(String origin, 
+                    GeolocationPermissions.Callback callback) {
+                // Check if location permission is granted
+                if (ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.ACCESS_FINE_LOCATION) 
+                        == PackageManager.PERMISSION_GRANTED) {
+                    callback.invoke(origin, true, false);
+                } else {
+                    ActivityCompat.requestPermissions(MainActivity.this,
+                            new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+                            PERMISSION_REQUEST_CODE);
                     callback.invoke(origin, true, false);
                 }
-            });
-        }
+            }
+            
+            // Handle file chooser for input[type=file] - Gallery picker
+            @Override
+            public boolean onShowFileChooser(WebView webView, 
+                    ValueCallback<Uri[]> filePathCallback,
+                    FileChooserParams fileChooserParams) {
+                
+                // Save callback for later
+                MainActivity.this.filePathCallback = filePathCallback;
+                
+                // Create intent for file chooser
+                Intent intent = fileChooserParams.createIntent();
+                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                
+                try {
+                    fileChooserLauncher.launch(intent);
+                } catch (Exception e) {
+                    MainActivity.this.filePathCallback = null;
+                    return false;
+                }
+                
+                return true;
+            }
+        });
     }
     
     @Override
@@ -106,10 +216,18 @@ public class MainActivity extends BridgeActivity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         
         if (requestCode == PERMISSION_REQUEST_CODE) {
-            // Permissions handled, reload WebView if needed
-            if (getBridge() != null) {
-                // Optionally reload to apply new permissions
-                // getBridge().getWebView().reload();
+            // Check if all permissions granted, then reload webview
+            boolean allGranted = true;
+            for (int result : grantResults) {
+                if (result != PackageManager.PERMISSION_GRANTED) {
+                    allGranted = false;
+                    break;
+                }
+            }
+            
+            if (allGranted && getBridge() != null && getBridge().getWebView() != null) {
+                // Reload to apply new permissions
+                getBridge().getWebView().reload();
             }
         }
     }
