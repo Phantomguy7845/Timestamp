@@ -64,7 +64,15 @@ export function useCamera() {
 
             streamRef.current = stream;
             videoRef.current.srcObject = stream;
-            await videoRef.current.play();
+            try {
+                await videoRef.current.play();
+            } catch (playErr) {
+                // Ignore "interrupted by a new load request" error which is common when switching cameras or strict mode
+                const msg = (playErr as Error).message || '';
+                if (!msg.includes('interrupted by a new load request')) {
+                    log(`Video play warning: ${msg}`, 'warn');
+                }
+            }
 
             // Check for torch capability
             const track = stream.getVideoTracks()[0];
