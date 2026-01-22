@@ -1,8 +1,40 @@
 import type { Photo, Settings } from '../types';
 import { renderPhotoToBlob } from './canvas';
 import { generateFilename } from './format';
+import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Capacitor } from '@capacitor/core';
 
-// Download single blob
+// Write to native filesystem
+async function saveToNative(blob: Blob, filename: string): Promise<string> {
+    try {
+        const base64 = await blobToBase64(blob);
+        const result = await Filesystem.writeFile({
+            path: filename,
+            data: base64,
+            directory: Directory.Documents,
+            recursive: true
+        });
+        return result.uri;
+    } catch (e) {
+        throw new Error(`Native save failed: ${e}`);
+    }
+}
+
+// Convert blob to base64
+function blobToBase64(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            const base64 = reader.result as string;
+            // Remove data:image/jpeg;base64, prefix
+            resolve(base64.split(',')[1]);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
+}
+
+// Download single blob (Web only)
 function downloadBlob(blob: Blob, filename: string): void {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -29,10 +61,19 @@ export async function downloadOne(
 ): Promise<void> {
     const blob = await renderPhotoToBlob(photo, settings, format, quality);
     const filename = generateFilename(index, format);
-    downloadBlob(blob, filename);
+
+    if (Capacitor.isNativePlatform()) {
+        await saveToNative(blob, filename);
+    } else {
+        downloadBlob(blob, filename);
+    }
 }
 
-// Download all photos with 3-tier fallback
+// Download all photos with 4-tier fallback
+// Tier 1: Capacitor Filesystem (Native)
+// Tier 2: File System Access API (Desktop Chrome)
+// Tier 3: JSZip
+// Tier 4: Sequential downloads
 export async function downloadAll(
     photos: Photo[],
     settings: Settings,
@@ -43,7 +84,26 @@ export async function downloadAll(
     const total = photos.length;
     if (total === 0) return { method: 'none', success: false };
 
-    // Tier 1: File System Access API
+    // Tier 1: Capacitor Filesystem (Native)
+    if (Capacitor.isNativePlatform()) {
+        try {
+            for (let i = 0; i < total; i++) {
+                const blob = await renderPhotoToBlob(photos[i], settings, format, quality);
+                const filename = generateFilename(i, format);
+                await saveToNative(blob, `Timestamp/${filename}`); // Save to Timestamp subfolder
+                onProgress(i + 1, total);
+            }
+            return { method: 'native-filesystem', success: true };
+        } catch (e) {
+            console.error('Native save failed:', e);
+            // Fallback to other methods if needed, but native usually expects execution to stop or alert
+            // But we can try zip if that fails? No, if native fails, web download also fails usually.
+            // Let's try to return false.
+            return { method: 'native-filesystem', success: false };
+        }
+    }
+
+    // Tier 2: File System Access API
     if ('showDirectoryPicker' in window) {
         try {
             const dirHandle = await (window as any).showDirectoryPicker({
@@ -66,11 +126,11 @@ export async function downloadAll(
                 return { method: 'filesystem', success: false };
             }
             console.log('File System API failed, trying ZIP:', e);
-            // Fall through to Tier 2
+            // Fall through to Tier 3
         }
     }
 
-    // Tier 2: JSZip
+    // Tier 3: JSZip
     try {
         const JSZip = (await import('jszip')).default;
         const zip = new JSZip();
@@ -87,15 +147,21 @@ export async function downloadAll(
         const y = now.getFullYear();
         const mo = (now.getMonth() + 1).toString().padStart(2, '0');
         const d = now.getDate().toString().padStart(2, '0');
-        downloadBlob(zipBlob, `Timestamp_${y}${mo}${d}.zip`);
+        const zipName = `Timestamp_${y}${mo}${d}.zip`;
+
+        if (Capacitor.isNativePlatform()) {
+            await saveToNative(zipBlob, zipName);
+        } else {
+            downloadBlob(zipBlob, zipName);
+        }
 
         return { method: 'zip', success: true };
     } catch (e) {
         console.log('JSZip failed, trying sequential:', e);
-        // Fall through to Tier 3
+        // Fall through to Tier 4
     }
 
-    // Tier 3: Sequential downloads
+    // Tier 4: Sequential downloads
     for (let i = 0; i < total; i++) {
         const blob = await renderPhotoToBlob(photos[i], settings, format, quality);
         const filename = generateFilename(i, format);
