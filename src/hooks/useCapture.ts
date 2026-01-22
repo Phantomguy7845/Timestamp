@@ -52,7 +52,7 @@ export function useCapture() {
                 };
 
                 await addPhoto(record);
-                showToast('ถ่ายรูปแล้ว', 'success');
+                // showToast('ถ่ายรูปแล้ว', 'success'); // Removed as per user request
             } catch (e) {
                 log(`Capture failed: ${e}`, 'error');
                 showToast('ถ่ายรูปไม่สำเร็จ', 'error');
