@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Timestamp</string>
+    <string name="title_activity_main">Timestamp</string>
+    <string name="package_name">com.example.timestamp</string>
+    <string name="custom_url_scheme">com.example.timestamp</string>
+</resources>
