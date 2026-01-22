@@ -137,6 +137,7 @@ interface AppContextType {
     showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
     openPreview: (photoId: string) => void;
     closeModal: () => void;
+    videoRef: React.RefObject<HTMLVideoElement>;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -144,6 +145,7 @@ const AppContext = createContext<AppContextType | null>(null);
 export function AppProvider({ children }: { children: ReactNode }) {
     const [state, dispatch] = useReducer(appReducer, initialState);
     const objectUrlsRef = useRef<Map<string, string>>(new Map());
+    const videoRef = useRef<HTMLVideoElement>(null);
 
     // Load photos from IndexedDB on mount
     useEffect(() => {
@@ -238,6 +240,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 showToast,
                 openPreview,
                 closeModal,
+                videoRef,
             }}
         >
             {children}

@@ -5,7 +5,7 @@ import { useCapture } from '../../hooks/useCapture';
 import { formatTimeSummary, formatLocationSummary } from '../../lib/format';
 
 export default function BottomControls() {
-    const { state, dispatch, deletePhoto, deleteAllPhotos, openPreview, showToast } = useApp();
+    const { state, dispatch, deleteAllPhotos, openPreview, showToast } = useApp();
     const { videoRef, cameraOn, cameraStatus, hasMultipleCameras, switchCamera } = useCamera();
     const { capturePhoto, importPhotos } = useCapture();
     const galleryRef = useRef<HTMLDivElement>(null);
@@ -35,11 +35,6 @@ export default function BottomControls() {
         await capturePhoto(videoRef.current);
     };
 
-    const handleDeletePhoto = async (e: React.MouseEvent, id: string) => {
-        e.stopPropagation();
-        await deletePhoto(id);
-        showToast('ลบรูปแล้ว', 'info');
-    };
 
     const handleDeleteAll = async () => {
         if (photos.length === 0) return;
@@ -118,13 +113,8 @@ export default function BottomControls() {
                     >
                         <img src={photo.thumbUrl} alt={`Photo ${index + 1}`} />
                         <span className="thumbnail-badge">{index + 1}</span>
-                        <button
-                            className="thumbnail-delete"
-                            onClick={(e) => handleDeletePhoto(e, photo.id)}
-                            title="ลบรูปนี้"
-                        >
-                            ✕
-                        </button>
+
+
                     </div>
                 ))}
             </div>

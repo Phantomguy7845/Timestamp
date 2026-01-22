@@ -4,8 +4,7 @@ import { log } from '../lib/logger';
 import { Camera } from '@capacitor/camera';
 
 export function useCamera() {
-    const { state, dispatch, showToast } = useApp();
-    const videoRef = useRef<HTMLVideoElement | null>(null);
+    const { state, dispatch, showToast, videoRef } = useApp();
     const streamRef = useRef<MediaStream | null>(null);
 
     const { cameraOn, facingMode, torchOn, cameraStatus } = state;
