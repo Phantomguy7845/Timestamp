@@ -28,15 +28,10 @@ import java.util.List;
 public class MainActivity extends BridgeActivity {
     
     private static final int PERMISSION_REQUEST_CODE = 100;
-    private ValueCallback<Uri[]> filePathCallback;
-    private ActivityResultLauncher<Intent> fileChooserLauncher;
-    
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        
-        // Setup file chooser launcher
-        setupFileChooserLauncher();
         
         // Request permissions on startup
         requestRequiredPermissions();
@@ -47,31 +42,6 @@ public class MainActivity extends BridgeActivity {
         super.onStart();
         // Configure WebView after bridge is ready
         configureWebView();
-    }
-    
-    private void setupFileChooserLauncher() {
-        fileChooserLauncher = registerForActivityResult(
-            new ActivityResultContracts.StartActivityForResult(),
-            result -> {
-                if (filePathCallback != null) {
-                    Uri[] results = null;
-                    if (result.getResultCode() == Activity.RESULT_OK && result.getData() != null) {
-                        // Handle multiple selection
-                        if (result.getData().getClipData() != null) {
-                            int count = result.getData().getClipData().getItemCount();
-                            results = new Uri[count];
-                            for (int i = 0; i < count; i++) {
-                                results[i] = result.getData().getClipData().getItemAt(i).getUri();
-                            }
-                        } else if (result.getData().getData() != null) {
-                            results = new Uri[]{result.getData().getData()};
-                        }
-                    }
-                    filePathCallback.onReceiveValue(results);
-                    filePathCallback = null;
-                }
-            }
-        );
     }
     
     private void requestRequiredPermissions() {
@@ -185,28 +155,7 @@ public class MainActivity extends BridgeActivity {
                 }
             }
             
-            // Handle file chooser for input[type=file] - Gallery picker
-            @Override
-            public boolean onShowFileChooser(WebView webView, 
-                    ValueCallback<Uri[]> filePathCallback,
-                    FileChooserParams fileChooserParams) {
-                
-                // Save callback for later
-                MainActivity.this.filePathCallback = filePathCallback;
-                
-                // Create intent for file chooser
-                Intent intent = fileChooserParams.createIntent();
-                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
-                
-                try {
-                    fileChooserLauncher.launch(intent);
-                } catch (Exception e) {
-                    MainActivity.this.filePathCallback = null;
-                    return false;
-                }
-                
-                return true;
-            }
+
         });
     }
     

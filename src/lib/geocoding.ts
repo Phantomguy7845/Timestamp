@@ -1,4 +1,27 @@
+import { Geolocation } from '@capacitor/geolocation';
+
 const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org';
+
+// Request location permission using Capacitor
+export async function requestLocationPermission(): Promise<boolean> {
+    try {
+        const status = await Geolocation.checkPermissions();
+
+        if (status.location === 'granted' || status.coarseLocation === 'granted') {
+            return true;
+        }
+
+        if (status.location === 'prompt' || status.location === 'prompt-with-rationale') {
+            const result = await Geolocation.requestPermissions({ permissions: ['location'] });
+            return result.location === 'granted' || result.coarseLocation === 'granted';
+        }
+
+        return false;
+    } catch (e) {
+        console.error('Location permission check failed:', e);
+        return false;
+    }
+}
 
 // Reverse geocode: lat/lng -> address
 export async function reverseGeocode(
@@ -51,29 +74,26 @@ export async function forwardGeocode(
     }
 }
 
-// Get current GPS position
-export function getCurrentPosition(): Promise<{ lat: number; lng: number }> {
-    return new Promise((resolve, reject) => {
-        if (!navigator.geolocation) {
-            reject(new Error('Geolocation not supported'));
-            return;
-        }
+// Get current GPS position using Capacitor Geolocation
+export async function getCurrentPosition(): Promise<{ lat: number; lng: number }> {
+    // Request permission first
+    const hasPermission = await requestLocationPermission();
+    if (!hasPermission) {
+        throw new Error('Location permission denied');
+    }
 
-        navigator.geolocation.getCurrentPosition(
-            (pos) => {
-                resolve({
-                    lat: pos.coords.latitude,
-                    lng: pos.coords.longitude,
-                });
-            },
-            (err) => {
-                reject(err);
-            },
-            {
-                enableHighAccuracy: true,
-                timeout: 12000,
-                maximumAge: 0,
-            }
-        );
-    });
+    try {
+        const position = await Geolocation.getCurrentPosition({
+            enableHighAccuracy: true,
+            timeout: 15000,
+        });
+
+        return {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+        };
+    } catch (e) {
+        console.error('Get position failed:', e);
+        throw e;
+    }
 }

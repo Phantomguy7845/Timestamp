@@ -1,6 +1,7 @@
 import { useRef, useEffect, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import { log } from '../lib/logger';
+import { Camera } from '@capacitor/camera';
 
 export function useCamera() {
     const { state, dispatch, showToast } = useApp();
@@ -8,6 +9,29 @@ export function useCamera() {
     const streamRef = useRef<MediaStream | null>(null);
 
     const { cameraOn, facingMode, torchOn, cameraStatus } = state;
+
+    // Request camera permission using Capacitor
+    const requestCameraPermission = useCallback(async (): Promise<boolean> => {
+        try {
+            const status = await Camera.checkPermissions();
+
+            if (status.camera === 'granted') {
+                return true;
+            }
+
+            if (status.camera === 'prompt' || status.camera === 'prompt-with-rationale') {
+                const result = await Camera.requestPermissions({ permissions: ['camera'] });
+                return result.camera === 'granted';
+            }
+
+            // Permission denied
+            return false;
+        } catch (e) {
+            log(`Permission check failed: ${e}`, 'error');
+            // Fallback: try to use camera anyway
+            return true;
+        }
+    }, []);
 
     // Start camera
     const startCamera = useCallback(async () => {
@@ -17,6 +41,14 @@ export function useCamera() {
         log(`Starting camera: ${facingMode}`);
 
         try {
+            // Request permission first via Capacitor
+            const hasPermission = await requestCameraPermission();
+            if (!hasPermission) {
+                dispatch({ type: 'SET_CAMERA_STATUS', payload: 'denied' });
+                showToast('กรุณาอนุญาตการใช้กล้องในการตั้งค่า', 'error');
+                return;
+            }
+
             // Stop existing stream
             if (streamRef.current) {
                 streamRef.current.getTracks().forEach((t) => t.stop());
@@ -57,10 +89,10 @@ export function useCamera() {
                 showToast('กรุณาอนุญาตการใช้กล้อง', 'error');
             } else {
                 dispatch({ type: 'SET_CAMERA_STATUS', payload: 'error' });
-                showToast('เปิดกล้องไม่สำเร็จ', 'error');
+                showToast('เปิดกล้องไม่สำเร็จ: ' + err.message, 'error');
             }
         }
-    }, [facingMode, dispatch, showToast]);
+    }, [facingMode, dispatch, showToast, requestCameraPermission]);
 
     // Stop camera
     const stopCamera = useCallback(() => {

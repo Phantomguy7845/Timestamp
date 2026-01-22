@@ -1,29 +1,45 @@
 import { useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useCamera } from '../../hooks/useCamera';
+import { Camera } from '@capacitor/camera';
 import { downloadAll } from '../../lib/download';
 import { log } from '../../lib/logger';
 
 export default function Topbar() {
     const { state, dispatch, showToast } = useApp();
     const { cameraOn, toggleCameraOn, torchOn, toggleTorch, hasTorch, cameraStatus } = useCamera();
-    const importRef = useRef<HTMLInputElement>(null);
+    const handleImport = async () => {
+        try {
+            const result = await Camera.pickImages({
+                quality: 100,
+                limit: 20 // Reasonable limit for performance
+            });
 
-    const handleImport = () => {
-        importRef.current?.click();
+            if (result.photos.length > 0) {
+                showToast('กำลังนำเข้ารูปภาพ...', 'info');
+
+                // Convert GalleryPhotos to Files
+                const files = await Promise.all(result.photos.map(async (photo) => {
+                    const response = await fetch(photo.webPath);
+                    const blob = await response.blob();
+                    // Generate a filename based on timestamp or format
+                    const ext = photo.format || 'jpg';
+                    const filename = `imported_${Date.now()}_${Math.random().toString(36).substr(2, 5)}.${ext}`;
+                    return new File([blob], filename, { type: blob.type });
+                }));
+
+                const event = new CustomEvent('import-files', { detail: files });
+                window.dispatchEvent(event);
+            }
+        } catch (e) {
+            // Check if user cancelled
+            if ((e as any).message !== 'User cancelled photos app') {
+                log(`Pick images failed: ${e}`, 'error');
+                showToast('เลือกรูปภาพไม่สำเร็จ', 'error');
+            }
+        }
     };
-
-    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const files = e.target.files;
-        if (!files || files.length === 0) return;
-
-        // Import is handled by useCapture hook in BottomControls
-        // We dispatch an event or call context method
-        const event = new CustomEvent('import-files', { detail: files });
-        window.dispatchEvent(event);
-
-        e.target.value = '';
-    };
+    // Removed handleFileChange as we don't use input[type=file] anymore
 
     const handleDownloadAll = async () => {
         if (state.photos.length === 0) return;
@@ -100,14 +116,7 @@ export default function Topbar() {
                 >
                     📥
                 </button>
-                <input
-                    ref={importRef}
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={handleFileChange}
-                    style={{ display: 'none' }}
-                />
+
 
                 {/* Download All */}
                 <button
